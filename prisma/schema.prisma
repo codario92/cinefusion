@@ -1,0 +1,102 @@
+// ----------------------------
+// Prisma + SQLite setup
+// ----------------------------
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------
+// Models
+// ----------------------------
+
+// A basic user record (can be viewer or creator owner)
+model User {
+  id             String            @id @default(cuid())
+  email          String            @unique
+  name           String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  // one-to-one creator profile (optional)
+  creatorProfile CreatorProfile?
+  // subscriptions this user owns as a customer (viewer paying a creator)
+  subscriptions  Subscription[]
+  // tips this user has sent
+  tipsSent       Tip[]             @relation("TipsSent")
+}
+
+// Creator profile (separate from auth user to keep marketing fields)
+model CreatorProfile {
+  id          String          @id @default(cuid())
+  user        User            @relation(fields: [userId], references: [id])
+  userId      String          @unique
+
+  displayName String
+  bio         String?
+  // Stripe account ids for payouts can live here later
+
+  films       Film[]
+  subscribers Subscription[]  // back-relations from Subscription.creator
+  tips        Tip[]           // tips this creator received
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model Film {
+  id            String          @id @default(cuid())
+  creator       CreatorProfile  @relation(fields: [creatorId], references: [id])
+  creatorId     String
+
+  title         String
+  description   String
+  provider      String          // "youtube" | "vimeo" | "mp4" (free text for now)
+  videoId       String          // id or URL depending on provider
+
+  // SQLite doesn't support String[]; store one thumbnail or a CSV/JSON string.
+  thumbnail     String?         // single image URL
+  genreCsv      String?         // e.g. "drama,thriller"
+  likes         Int             @default(0)
+  isPremium     Boolean         @default(false)
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // tips and subscriptions connected via creator profile, not film
+}
+
+model Subscription {
+  id               String          @id @default(cuid())
+  user             User            @relation(fields: [userId], references: [id])
+  userId           String
+
+  creator          CreatorProfile  @relation(fields: [creatorId], references: [id])
+  creatorId        String
+
+  stripeSubId      String          @unique
+  stripePriceId    String
+  status           String          // "active" | "canceled" | "incomplete" | "past_due" etc.
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Tip {
+  id           String          @id @default(cuid())
+
+  // sender (viewer)
+  fromUser     User            @relation("TipsSent", fields: [fromUserId], references: [id])
+  fromUserId   String
+
+  // receiver (creator)
+  creator      CreatorProfile  @relation(fields: [creatorId], references: [id])
+  creatorId    String
+
+  amountCents  Int
+  message      String?
+  createdAt    DateTime        @default(now())
+}

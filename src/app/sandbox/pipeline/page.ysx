@@ -1,0 +1,52 @@
+import Link from "next/link";
+
+const steps = [
+  { name: "Script & Beats", bullets: ["Write/import script", "Auto split into beats", "Generate shot list"] },
+  { name: "Characters", bullets: ["Character cards", "Reference pack", "Pose/expression anchors"] },
+  { name: "Style Bible", bullets: ["Palette", "Line weight", "Lighting rules", "Camera rules"] },
+  { name: "Scenes", bullets: ["Locations", "Props", "Continuity checks", "Scene graph"] },
+  { name: "Render", bullets: ["Queue", "Retries", "Cost caps", "Drift detection"] },
+  { name: "Publish", bullets: ["Episode export", "Shorts export", "Marketing cutdowns"] },
+];
+
+export default function SandboxPipelinePage() {
+  return (
+    <main className="min-h-screen bg-neutral-950 text-white p-6">
+      <div className="mx-auto max-w-4xl">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Sandbox Pipeline</h1>
+          <Link className="rounded-xl px-3 py-2 hover:bg-white/5 text-white/80 hover:text-white" href="/sandbox">
+            Back
+          </Link>
+        </div>
+
+        <p className="mt-3 text-white/70 text-sm max-w-2xl">
+          This page is the contract: the exact creation flow we’ll implement. Next we’ll persist projects in Supabase
+          and build step modules.
+        </p>
+
+        <div className="mt-6 grid gap-4">
+          {steps.map((s) => (
+            <div key={s.name} className="rounded-3xl border border-white/10 bg-white/5 p-6">
+              <div className="text-lg font-semibold">{s.name}</div>
+              <ul className="mt-3 list-disc pl-5 text-sm text-white/70 space-y-1">
+                {s.bullets.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-8 flex gap-3">
+          <Link href="/sandbox/new" className="rounded-2xl bg-white text-black px-5 py-3 font-medium hover:opacity-90">
+            Create New Project
+          </Link>
+          <Link href="/dashboard" className="rounded-2xl border border-white/15 bg-white/5 px-5 py-3 hover:bg-white/10">
+            Dashboard
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}

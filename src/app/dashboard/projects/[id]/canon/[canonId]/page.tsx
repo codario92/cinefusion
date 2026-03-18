@@ -1,96 +1,76 @@
-// src/app/dashboard/projects/[id]/canon/[canonId]/page.tsx
 import { notFound } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import NewCanonVersionForm from "./NewCanonVersionForm";
 import VersionsDnDList from "./VersionsDnDList";
+import NewCanonVersionForm from "./NewCanonVersionForm";
 
-type Params = {
-  id: string;
-  canonId: string;
+type Props = {
+  params: {
+    id: string;        // projectId
+    canonId: string;
+  };
 };
 
-export default async function CanonDetailPage({
-  params,
-}: {
-  params: Promise<Params>;
-}) {
-  const { id: projectId, canonId } = await params;
+export default async function CanonPage({ params }: Props) {
+  const { id: projectId, canonId } = params;
+
   const supabase = await getSupabaseServer();
 
-  // 1) Load canon entity
-  const { data: canon, error: canonErr } = await supabase
+  /* =========================
+     GET CANON ENTITY
+  ========================= */
+  const { data: canon } = await supabase
     .from("canon_entities")
-    .select("id, project_id, name, type")
+    .select("*")
     .eq("id", canonId)
-    .eq("project_id", projectId)
     .single();
 
-  if (canonErr || !canon) return notFound();
+  if (!canon) return notFound();
 
-  // 2) TEMP DEBUG TEST: raw versions query with NO filter
-  const { data: versions, error: versionsErr } = await supabase
+  /* =========================
+     GET VERSIONS (FIXED ORDER)
+  ========================= */
+  const { data: versions } = await supabase
     .from("canon_versions")
-    .select("id, canon_entity_id, version, payload, notes, created_at, image_url, image_meta, is_current, sort_order, sort_index")
-    .order("created_at", { ascending: false })
-    .limit(5);
+    .select("*")
+    .eq("canon_entity_id", canonId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("version", { ascending: false });
 
-  console.log("VERSIONS TEST RAW:", versions, versionsErr);
+  /* =========================
+     SAFETY FALLBACK
+     (if sort_order doesn't exist yet)
+  ========================= */
+  const safeVersions =
+    versions?.length
+      ? versions.map((v, i) => ({
+          ...v,
+          sort_order: v.sort_order ?? i,
+        }))
+      : [];
 
-  const safeVersions = versionsErr || !versions ? [] : versions;
-
+  /* =========================
+     UI
+  ========================= */
   return (
-    <div className="space-y-6">
-      {/* PROOF / DEBUG BANNER */}
-      <div className="rounded-xl border-4 border-red-500 bg-red-500/10 px-4 py-3 font-mono text-sm">
-        <div className="font-bold text-red-200">
-          🚨 CANON PAGE PROOF BANNER — RAW QUERY TEST
-        </div>
-
-        <div className="mt-2 text-red-100">
-          projectId: <span className="text-red-200">{projectId}</span>
-        </div>
-        <div className="text-red-100">
-          canonId: <span className="text-red-200">{canonId}</span>
-        </div>
-        <div className="text-red-100">
-          canon.id: <span className="text-red-200">{canon.id}</span>
-        </div>
-        <div className="text-red-100">
-          versions fetched: <span className="text-red-200">{safeVersions.length}</span>
-        </div>
-        <div className="mt-1 text-red-100">
-          versionsErr:{" "}
-          <span className="text-red-200">
-            {versionsErr ? JSON.stringify(versionsErr, null, 2) : "none"}
-          </span>
-        </div>
-        <div className="mt-1 text-red-100 break-all">
-          versions raw:{" "}
-          <span className="text-red-200">
-            {JSON.stringify(versions)}
-          </span>
-        </div>
+    <div className="p-6 space-y-6">
+      {/* HEADER */}
+      <div>
+        <h1 className="text-2xl font-bold text-white">
+          {canon.name}
+        </h1>
+        <p className="text-sm text-white/50">
+          Canon ID: {canon.id}
+        </p>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-        <div className="text-sm font-semibold text-white">Canon Entity</div>
-        <div className="mt-2 space-y-1 text-sm text-white/70">
-          <div>
-            ID: <span className="text-white/90">{canon.id}</span>
-          </div>
-          <div>
-            Name: <span className="text-white/90">{canon.name}</span>
-          </div>
-          <div>
-            Type: <span className="text-white/90">{canon.type}</span>
-          </div>
-        </div>
-      </div>
+      {/* CREATE NEW VERSION */}
+      <NewCanonVersionForm
+        projectId={projectId}
+        canonId={canonId}
+      />
 
-      <NewCanonVersionForm projectId={projectId} canonId={canonId} />
-
+      {/* VERSIONS LIST */}
       <VersionsDnDList
-        key={`versions-${safeVersions.length}`}
         projectId={projectId}
         canonId={canonId}
         initialVersions={safeVersions}

@@ -1,6 +1,21 @@
 "use client";
 
 import * as React from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type CanonVersionRow = {
   id: string;
@@ -13,7 +28,6 @@ type CanonVersionRow = {
   image_meta?: any;
   is_current?: boolean | null;
   sort_order?: number | null;
-  sort_index?: number | null;
 };
 
 type Props = {
@@ -23,12 +37,45 @@ type Props = {
 };
 
 function getImageUrl(v: CanonVersionRow): string | null {
-  if (v.image_url && typeof v.image_url === "string") return v.image_url;
+  return v.image_url || v?.payload?.image?.url || null;
+}
 
-  const payloadImageUrl = v?.payload?.image?.url;
-  if (payloadImageUrl && typeof payloadImageUrl === "string") return payloadImageUrl;
+function SortableItem({
+  version,
+  children,
+}: {
+  version: CanonVersionRow;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: version.id });
 
-  return null;
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute right-3 top-3 z-10 cursor-grab active:cursor-grabbing text-lg text-white/40 hover:text-white"
+        title="Drag to reorder"
+      >
+        ☰
+      </div>
+
+      {children}
+    </div>
+  );
 }
 
 export default function VersionsDnDList({
@@ -37,148 +84,269 @@ export default function VersionsDnDList({
   initialVersions,
 }: Props) {
   const [versions, setVersions] = React.useState<CanonVersionRow[]>(initialVersions);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
-  const [actionErr, setActionErr] = React.useState<string | null>(null);
-  const [actionMsg, setActionMsg] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   React.useEffect(() => {
     setVersions(initialVersions);
   }, [initialVersions]);
 
-  async function handleSetCurrent(versionId: string) {
-    try {
-      setBusyId(versionId);
-      setActionErr(null);
-      setActionMsg(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
+  );
 
+  async function saveOrder(updated: CanonVersionRow[]) {
+    setSaving(true);
+    setError(null);
+
+    const updates = updated.map((v, index) => ({
+      id: v.id,
+      sort_order: index,
+    }));
+
+    try {
       const res = await fetch(
-        `/dashboard/projects/${projectId}/canon/${canonId}/versions/set-current`,
+        `/dashboard/projects/${projectId}/canon/${canonId}/versions/reorder`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ versionId }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ updates }),
         }
       );
 
-      const json = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(json?.error || `Failed (${res.status})`);
+        throw new Error(data?.error || "Failed to save order");
       }
-
-      setActionMsg("Current version updated.");
-
-      setVersions((prev) =>
-        prev.map((v) => ({
-          ...v,
-          is_current: v.id === versionId,
-        }))
-      );
-    } catch (e: any) {
-      setActionErr(e?.message || "Failed to set current.");
+    } catch (err) {
+      console.error("Reorder error:", err);
+      setError(err instanceof Error ? err.message : "Failed to save order");
+      setVersions(initialVersions);
     } finally {
-      setBusyId(null);
+      setSaving(false);
     }
   }
 
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-white">
-          Versions ({versions.length})
-        </div>
-        <div className="text-xs font-mono text-white/50">
-          canonId: {canonId.slice(0, 8)}...
-        </div>
-      </div>
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-      {actionErr ? (
-        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-          {actionErr}
-        </div>
-      ) : null}
+    const oldIndex = versions.findIndex((v) => v.id === active.id);
+    const newIndex = versions.findIndex((v) => v.id === over.id);
 
-      {actionMsg ? (
-        <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-          {actionMsg}
-        </div>
-      ) : null}
+    if (oldIndex === -1 || newIndex === -1) return;
 
-      {versions.length === 0 ? (
-        <div className="mt-3 text-sm text-white/60">
-          No versions returned for this canon entity.
-        </div>
-      ) : (
-        <div className="mt-4 space-y-3">
-          {versions.map((v) => {
-            const displayImageUrl = getImageUrl(v);
+    const newOrder = arrayMove(versions, oldIndex, newIndex).map((v, index) => ({
+      ...v,
+      sort_order: index,
+    }));
 
-            return (
-              <div
-                key={v.id}
-                className="rounded-2xl border border-white/10 bg-black/30 p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-white">
-                      <span className="font-semibold">v{v.version}</span>{" "}
-                      <span className="text-white/50">•</span>{" "}
-                      <span className="text-white/70">
-                        {new Date(v.created_at).toLocaleString()}
-                      </span>
-                    </div>
+    setVersions(newOrder);
+    void saveOrder(newOrder);
+  }
 
-                    <div className="mt-1 text-xs font-mono text-white/40">
-                      {v.id.slice(0, 8)}...
-                    </div>
-                  </div>
+  if (!mounted) {
+    return (
+      <div className="space-y-4">
+        {versions.map((v) => {
+          const img = getImageUrl(v);
 
-                  <div className="flex items-center gap-2">
-                    {v.is_current ? (
-                      <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-200">
-                        Current
-                      </span>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      onClick={() => handleSetCurrent(v.id)}
-                      disabled={busyId === v.id}
-                      className="rounded-md border border-white/10 bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/20 disabled:opacity-50"
-                    >
-                      {busyId === v.id ? "Setting..." : "Set Current"}
-                    </button>
+          return (
+            <div key={v.id} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="flex items-start justify-between pr-8">
+                <div>
+                  <div className="text-white font-semibold">v{v.version}</div>
+                  <div className="text-xs text-white/50">
+                    {new Date(v.created_at).toLocaleString()}
                   </div>
                 </div>
 
-                {v.notes ? (
-                  <div className="mt-3 text-sm text-white/70">{v.notes}</div>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {v.is_current ? (
+                    <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-200">
+                      Current
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+                    >
+                      Set Current
+                    </button>
+                  )}
 
-                {displayImageUrl ? (
-                  <div className="mt-4">
-                    <div className="mb-2 text-xs text-white/50">Character Image</div>
-                    <img
-                      src={displayImageUrl}
-                      alt={`Canon version v${v.version}`}
-                      className="h-40 w-40 rounded-xl border border-white/10 object-cover bg-black/40"
-                    />
+                  <button
+                    type="button"
+                    className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+                  >
+                    Duplicate
+                  </button>
+                </div>
+              </div>
+
+              {img ? (
+                <img
+                  src={img}
+                  alt={`Version ${v.version}`}
+                  className="mt-3 h-32 w-32 rounded-lg object-cover"
+                />
+              ) : (
+                <div className="mt-3 flex h-32 w-32 items-center justify-center border border-dashed border-white/10 text-xs text-white/40">
+                  No image
+                </div>
+              )}
+
+              {v.notes ? (
+                <div className="mt-2 text-sm text-white/70">{v.notes}</div>
+              ) : null}
+
+              <pre className="mt-3 max-h-40 overflow-auto rounded bg-black/40 p-2 text-xs text-white/60">
+                {JSON.stringify(v.payload, null, 2)}
+              </pre>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {saving ? <div className="text-xs text-white/50">Saving order...</div> : null}
+
+      {error ? (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+          {error}
+        </div>
+      ) : null}
+
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={versions.map((v) => v.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {versions.map((v) => {
+            const img = getImageUrl(v);
+
+            return (
+              <SortableItem key={v.id} version={v}>
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="flex items-start justify-between pr-8">
+                    <div>
+                      <div className="text-white font-semibold">v{v.version}</div>
+                      <div className="text-xs text-white/50">
+                        {new Date(v.created_at).toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {v.is_current ? (
+                        <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-200">
+                          Current
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(
+                                `/dashboard/projects/${projectId}/canon/${canonId}/versions/set-current`,
+                                {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ versionId: v.id }),
+                                }
+                              );
+
+                              if (!res.ok) {
+                                const data = await res.json().catch(() => ({}));
+                                throw new Error(data?.error || "Failed to set current");
+                              }
+
+                              window.location.reload();
+                            } catch (err) {
+                              console.error(err);
+                              alert(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Failed to set current"
+                              );
+                            }
+                          }}
+                          className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+                        >
+                          Set Current
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(
+                              `/dashboard/projects/${projectId}/canon/${canonId}/versions/${v.id}/duplicate`,
+                              { method: "POST" }
+                            );
+
+                            if (!res.ok) {
+                              const data = await res.json().catch(() => ({}));
+                              throw new Error(data?.error || "Failed to duplicate");
+                            }
+
+                            window.location.reload();
+                          } catch (err) {
+                            console.error(err);
+                            alert(
+                              err instanceof Error
+                                ? err.message
+                                : "Failed to duplicate"
+                            );
+                          }
+                        }}
+                        className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+                      >
+                        Duplicate
+                      </button>
+                    </div>
                   </div>
-                ) : null}
 
-                <div className="mt-4">
-                  <div className="mb-1 text-xs text-white/50">payload</div>
-                  <pre className="max-h-64 overflow-auto rounded-lg border border-white/10 bg-black/40 p-2 text-xs text-white/80">
+                  {img ? (
+                    <img
+                      src={img}
+                      alt={`Version ${v.version}`}
+                      className="mt-3 h-32 w-32 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="mt-3 flex h-32 w-32 items-center justify-center border border-dashed border-white/10 text-xs text-white/40">
+                      No image
+                    </div>
+                  )}
+
+                  {v.notes ? (
+                    <div className="mt-2 text-sm text-white/70">{v.notes}</div>
+                  ) : null}
+
+                  <pre className="mt-3 max-h-40 overflow-auto rounded bg-black/40 p-2 text-xs text-white/60">
                     {JSON.stringify(v.payload, null, 2)}
                   </pre>
                 </div>
-              </div>
+              </SortableItem>
             );
           })}
-        </div>
-      )}
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }

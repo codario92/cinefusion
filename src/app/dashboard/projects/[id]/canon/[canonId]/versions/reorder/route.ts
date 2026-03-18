@@ -1,31 +1,52 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
+type ReorderUpdate = {
+  id: string;
+  sort_order: number;
+};
+
 export async function POST(req: Request) {
-  const supabase = await getSupabaseServer();
+  try {
+    const supabase = await getSupabaseServer();
+    const body = await req.json();
+    const updates = body?.updates as ReorderUpdate[] | undefined;
 
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await req.json().catch(() => null);
-  const items = body?.items as Array<{ id: string; sort_index: number }> | undefined;
-
-  if (!items?.length) {
-    return NextResponse.json({ error: "items[] required" }, { status: 400 });
-  }
-
-  // Update each row
-  // (Fast + simple. Later we can do RPC for bulk update if you want.)
-  for (const it of items) {
-    const { error } = await supabase
-      .from("canon_versions")
-      .update({ sort_index: it.sort_index })
-      .eq("id", it.id);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!updates || !Array.isArray(updates)) {
+      return NextResponse.json(
+        { error: "updates[] required" },
+        { status: 400 }
+      );
     }
-  }
 
-  return NextResponse.json({ ok: true });
+    for (const u of updates) {
+      if (!u?.id || typeof u.sort_order !== "number") {
+        return NextResponse.json(
+          { error: "Each update must include id and numeric sort_order" },
+          { status: 400 }
+        );
+      }
+
+      const { error } = await supabase
+        .from("canon_versions")
+        .update({ sort_order: u.sort_order })
+        .eq("id", u.id);
+
+      if (error) {
+        console.error("Reorder update failed:", error);
+        return NextResponse.json(
+          { error: error.message || "Failed to update sort order" },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    console.error("Reorder crash:", err);
+    return NextResponse.json(
+      { error: err?.message || "Reorder failed" },
+      { status: 500 }
+    );
+  }
 }

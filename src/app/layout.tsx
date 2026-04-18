@@ -10,8 +10,8 @@ export default function RootLayout({
       <head>
         <meta
           name="google-site-verification"
-          content="t5RQlgmckYO_0hHx39WGzFkd-19067qrxy7eL"
-        />
+          content="t5RQlgmckYO_OhHx39WGzfkd-19067qrxy7eLbLcQro" />
+        /
       </head>
       <body>{children}</body>
     </html>

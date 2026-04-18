@@ -1,18 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type Props = {
+  projectId: string;
+  canonId: string;
+};
 
 export default function NewCanonVersionForm({
+  projectId,
   canonId,
-}: {
-  canonId: string;
-}) {
+}: Props) {
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      setPreview(null);
+      return;
+    }
 
     const url = URL.createObjectURL(file);
     setPreview(url);
@@ -22,8 +35,14 @@ export default function NewCanonVersionForm({
     e.preventDefault();
     setSaving(true);
 
-    const formData = new FormData(e.currentTarget);
-    formData.append("canon_entity_id", canonId);
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+
+    // keep canon id explicit for API
+    formData.set("canon_entity_id", canonId);
+
+    // optional: include project id too in case your API wants it later
+    formData.set("project_id", projectId);
 
     try {
       const res = await fetch("/api/canon/versions", {
@@ -34,13 +53,15 @@ export default function NewCanonVersionForm({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to save version");
+        throw new Error(data?.error || "Failed to save version");
       }
 
+      form.reset();
+      setPreview(null);
       window.location.reload();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to save version");
+      alert(err?.message || "Failed to save version");
     } finally {
       setSaving(false);
     }
@@ -58,6 +79,10 @@ export default function NewCanonVersionForm({
           Upload a character portrait and describe this version.
         </p>
       </div>
+
+      {/* hidden fields */}
+      <input type="hidden" name="canon_entity_id" value={canonId} />
+      <input type="hidden" name="project_id" value={projectId} />
 
       {/* IMAGE UPLOAD */}
       <div>
@@ -79,15 +104,15 @@ export default function NewCanonVersionForm({
           </p>
         </div>
 
-        {preview && (
+        {preview ? (
           <div className="mt-4">
             <img
               src={preview}
-              alt="preview"
+              alt="Preview"
               className="w-40 rounded-lg border border-gray-300"
             />
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* NOTES */}

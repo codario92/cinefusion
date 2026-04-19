@@ -10,17 +10,47 @@ if (!supabaseUrl || !serviceRoleKey) {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+function normalizeBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+  return false;
+}
+
+function inferSource(source: string, referer: string | null) {
+  if (source && source !== "unknown") return source;
+
+  if (!referer) return "unknown";
+
+  try {
+    const url = new URL(referer);
+    if (url.pathname.includes("how-it-works")) {
+      return "how-it-works";
+    }
+    return "landing-hero";
+  } catch {
+    return "unknown";
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const referer = req.headers.get("referer");
 
     const email = String(body?.email || "").trim().toLowerCase();
-    const smsOptIn = Boolean(body?.smsOptIn);
-    const phone =
+    const rawPhone =
       body?.phone === null || body?.phone === undefined
         ? ""
         : String(body.phone).trim();
-    const source = String(body?.source || "unknown").trim();
+
+    const smsOptIn = normalizeBoolean(body?.smsOptIn) || rawPhone.length > 0;
+    const phone = smsOptIn ? rawPhone : null;
+
+    const rawSource = String(body?.source || "").trim();
+    const source = inferSource(rawSource, referer);
 
     if (!email) {
       return NextResponse.json(
@@ -47,7 +77,7 @@ export async function POST(req: Request) {
     const { error } = await supabase.from("beta_waitlist").insert({
       email,
       sms_opt_in: smsOptIn,
-      phone: smsOptIn ? phone : null,
+      phone,
       source,
     });
 

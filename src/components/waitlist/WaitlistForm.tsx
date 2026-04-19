@@ -1,44 +1,40 @@
 "use client";
 
-import * as React from "react";
+import { useState } from "react";
 
 type WaitlistFormProps = {
+  source?: string;
+  compact?: boolean;
   className?: string;
-  buttonText?: string;
-  showPhone?: boolean;
-  title?: string;
-  subtitle?: string;
 };
 
 export default function WaitlistForm({
+  source = "landing-page",
+  compact = false,
   className = "",
-  buttonText = "Join the Beta",
-  showPhone = true,
-  title,
-  subtitle,
 }: WaitlistFormProps) {
-  const [email, setEmail] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [success, setSuccess] = React.useState("");
-  const [error, setError] = React.useState("");
+  const [email, setEmail] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setLoading(true);
-    setSuccess("");
-    setError("");
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    const payload = {
+      email: email.trim(),
+      smsOptIn,
+      phone: smsOptIn ? phone.trim() : null,
+      source: String(source || "landing-page").trim(),
+    };
 
     try {
-      const payload: { email: string; phone?: string } = {
-        email: email.trim(),
-      };
-
-      if (showPhone && phone.trim()) {
-        payload.phone = phone.trim();
-      }
-
-      const res = await fetch("/api/waitlist", {
+      const response = await fetch("/api/waitlist", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -46,81 +42,109 @@ export default function WaitlistForm({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const data = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      };
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Something went wrong. Please try again.");
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Something went wrong.");
       }
 
-      setSuccess(data?.message || "You're on the list.");
       setEmail("");
+      setSmsOptIn(false);
       setPhone("");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      setError(message);
+      setSuccessMessage(data.message || "You’re on the list.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Something went wrong."
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className={className}>
-      {title ? (
-        <h3 className="text-2xl font-semibold tracking-tight text-white">{title}</h3>
-      ) : null}
+    <form onSubmit={handleSubmit} className={`w-full ${className}`}>
+      <div
+        className={`rounded-[30px] border border-white/15 bg-white/[0.12] backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.45)] ${
+          compact ? "p-4 md:p-5" : "p-5 md:p-6"
+        }`}
+      >
+        <label className="text-sm font-medium text-white/90">
+          Email address
+        </label>
 
-      {subtitle ? (
-        <p className="mt-2 text-sm text-white/70">{subtitle}</p>
-      ) : null}
+        <input
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="Enter your email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="mt-3 h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-white placeholder:text-white/35 outline-none transition focus:border-fuchsia-400/70"
+        />
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <div>
-          <label htmlFor="waitlist-email" className="mb-2 block text-sm font-medium text-white/90">
-            Email
-          </label>
+        <label className="mt-4 flex items-center gap-3 text-sm text-white/85">
           <input
-            id="waitlist-email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="w-full rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-white outline-none transition placeholder:text-white/40 focus:border-white/35 focus:bg-white/10"
+            type="checkbox"
+            checked={smsOptIn}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setSmsOptIn(checked);
+              if (!checked) setPhone("");
+            }}
+            className="h-4 w-4 rounded"
           />
-        </div>
+          Get optional text alerts for early access
+        </label>
 
-        {showPhone ? (
-          <div>
-            <label htmlFor="waitlist-phone" className="mb-2 block text-sm font-medium text-white/90">
-              Phone <span className="text-white/45">(optional)</span>
+        {smsOptIn && (
+          <div className="mt-4">
+            <label className="text-sm font-medium text-white/90">
+              Phone number
             </label>
+
             <input
-              id="waitlist-phone"
               type="tel"
-              inputMode="tel"
+              required={smsOptIn}
               autoComplete="tel"
+              placeholder="Enter your phone number"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="(555) 555-5555"
-              className="w-full rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-white outline-none transition placeholder:text-white/40 focus:border-white/35 focus:bg-white/10"
+              className="mt-3 h-12 w-full rounded-2xl border border-white/15 bg-black/25 px-4 text-white placeholder:text-white/35 outline-none transition focus:border-fuchsia-400/70"
             />
           </div>
-        ) : null}
+        )}
 
         <button
           type="submit"
           disabled={loading}
-          className="inline-flex w-full items-center justify-center rounded-xl bg-white px-5 py-3 font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-4 h-12 w-full rounded-2xl bg-gradient-to-r from-fuchsia-500 via-pink-400 to-cyan-300 px-5 font-semibold text-white shadow-[0_10px_40px_rgba(217,70,239,0.25)] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {loading ? "Submitting..." : buttonText}
+          {loading ? "Joining..." : "Join the Beta"}
         </button>
 
-        {success ? <p className="text-sm font-medium text-green-400">{success}</p> : null}
-        {error ? <p className="text-sm font-medium text-red-400">{error}</p> : null}
-      </form>
-    </div>
+        {!successMessage && !errorMessage && (
+          <p className="mt-3 text-sm text-white/65">
+            Early creators get priority visibility, fan tools, and monetization
+            access.
+          </p>
+        )}
+
+        {successMessage && (
+          <p className="mt-3 text-sm font-medium text-emerald-300">
+            {successMessage}
+          </p>
+        )}
+
+        {errorMessage && (
+          <p className="mt-3 text-sm font-medium text-red-300">
+            {errorMessage}
+          </p>
+        )}
+      </div>
+    </form>
   );
 }

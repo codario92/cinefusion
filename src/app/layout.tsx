@@ -1,5 +1,10 @@
 import "./globals.css";
 
+export const metadata = {
+  title: "CineFusion",
+  description: "Create. Canonize. Animate.",
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -7,13 +12,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        <meta
-          name="google-site-verification"
-          content="t5RQlgmckYO_OhHx39WGzfkd-19067qrxy7eLbLcQro" />
-        /
-      </head>
-      <body>{children}</body>
+      <body className="bg-black text-white">
+        {children}
+      </body>
     </html>
   );
 }

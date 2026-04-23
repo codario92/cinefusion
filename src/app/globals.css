@@ -58,3 +58,21 @@ a:hover { color: #d8b4fe; }
 input::placeholder, textarea::placeholder {
   color: rgba(0,0,0,0.55);
 }
+/* Force visible placeholders across the entire app */
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+  opacity: 1 !important;
+}
+
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+  opacity: 1 !important;
+}
+
+input::-moz-placeholder,
+textarea::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.7) !important;
+  opacity: 1 !important;
+}
